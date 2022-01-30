@@ -38,6 +38,12 @@
 #define WINDOW_CAPTION "GZX"
 
 static SDL_Surface *sdl_screen;
+static SDL_Window *sdl_window;
+static SDL_Renderer *sdl_renderer;
+static SDL_Texture* sdl_texture;
+
+
+
 static int fs = 0;
 static  SDL_Color color[256];
 static int xscale;
@@ -115,20 +121,20 @@ static int ktabsrc[]= {
   SDLK_F8,			WKEY_F8,
   SDLK_F9,			WKEY_F9,
   SDLK_F10,			WKEY_F10,
-  SDLK_NUMLOCK,			WKEY_NLOCK,
-  SDLK_SCROLLOCK,		WKEY_SLOCK,
-  SDLK_KP7,			WKEY_N7,
-  SDLK_KP8,			WKEY_N8,
-  SDLK_KP9,			WKEY_N9,
+  SDLK_NUMLOCKCLEAR,		WKEY_NLOCK,
+  SDLK_SCROLLLOCK,		WKEY_SLOCK,
+  SDLK_KP_7,			WKEY_N7,
+  SDLK_KP_8,			WKEY_N8,
+  SDLK_KP_9,			WKEY_N9,
   SDLK_KP_MINUS,		WKEY_NMINUS,
-  SDLK_KP4,			WKEY_N4,
-  SDLK_KP5,			WKEY_N5,
-  SDLK_KP6,			WKEY_N6,
+  SDLK_KP_4,			WKEY_N4,
+  SDLK_KP_5,			WKEY_N5,
+  SDLK_KP_6,			WKEY_N6,
   SDLK_KP_PLUS,			WKEY_NPLUS,
-  SDLK_KP1,			WKEY_N1,
-  SDLK_KP2,			WKEY_N2,
-  SDLK_KP3,			WKEY_N3,
-  SDLK_KP0,			WKEY_N0,
+  SDLK_KP_1,			WKEY_N1,
+  SDLK_KP_2,			WKEY_N2,
+  SDLK_KP_3,			WKEY_N3,
+  SDLK_KP_0,			WKEY_N0,
   SDLK_KP_PERIOD,		WKEY_NPERIOD,
   SDLK_LESS,			WKEY_LESS,
   SDLK_F11,			WKEY_F11,
@@ -136,9 +142,9 @@ static int ktabsrc[]= {
   SDLK_KP_ENTER,		WKEY_NENTER,
   SDLK_RCTRL,			WKEY_RCTRL,
   SDLK_KP_DIVIDE,		WKEY_NSLASH,
-  SDLK_PRINT,			WKEY_PRNSCR,
+  SDLK_PRINTSCREEN,		WKEY_PRNSCR,
   SDLK_RALT,			WKEY_RALT,
-  SDLK_BREAK,			WKEY_BRK,
+  SDLK_PAUSE,			WKEY_BRK,
   SDLK_HOME,			WKEY_HOME,
   SDLK_UP,			WKEY_UP,
   SDLK_PAGEUP,			WKEY_PGUP,
@@ -149,15 +155,15 @@ static int ktabsrc[]= {
   SDLK_PAGEDOWN,		WKEY_PGDN,
   SDLK_INSERT,			WKEY_INS,
   SDLK_DELETE,			WKEY_DEL,
-  SDLK_LSUPER,			WKEY_LOS,
-  SDLK_RSUPER,			WKEY_ROS,
+  SDLK_LGUI,			WKEY_LOS,
+  SDLK_RGUI,			WKEY_ROS,
   -1,				-1
 };
 
 /* graphics */
 
-static void w_vga_problem(void) {
-  fprintf(stderr, "vga Problem!");
+static void w_vga_problem(const char* msg) {
+  fprintf(stderr, "SDL init problem: %s", msg);
   exit(1);
 }
 
@@ -167,10 +173,11 @@ static void init_video(void) {
   
   /* Initialize SDL */
   if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-    w_vga_problem();
+    w_vga_problem("Unable to init sdl video");
   }
   
-  flags = SDL_SWSURFACE | (fs ? SDL_FULLSCREEN : 0);
+  // flags = SDL_SWSURFACE | (fs ? SDL_FULLSCREEN : 0);
+  flags = SDL_WINDOW_OPENGL | (fs ? SDL_WINDOW_FULLSCREEN : 0);
   scr_xs = video_w;
   scr_ys = video_h;
   
@@ -189,12 +196,28 @@ static void init_video(void) {
     vh *= 2;
   }
   
-  SDL_WM_SetCaption(WINDOW_CAPTION, WINDOW_CAPTION);
+  // SDL_WM_SetCaption(WINDOW_CAPTION, WINDOW_CAPTION);
+  // sdl_screen = SDL_SetVideoMode(vw, vh, 8, flags);
+
+  sdl_window = SDL_CreateWindow(WINDOW_CAPTION,
+    SDL_WINDOWPOS_UNDEFINED,
+    SDL_WINDOWPOS_UNDEFINED,
+    vw, vh, flags);
   
-  sdl_screen = SDL_SetVideoMode(vw, vh, 8, flags);
-  
-  if (sdl_screen == NULL)
-    w_vga_problem();
+  if (sdl_window == NULL) w_vga_problem("Unable to create SDL window");
+
+  sdl_screen = SDL_CreateRGBSurface(0, vw, vh, 32, 0, 0, 0, 0);
+  if (sdl_screen == NULL) w_vga_problem("Unable to create SDL screen");
+
+  sdl_renderer = SDL_CreateRenderer(sdl_window, -1, 0);
+  if (sdl_renderer == NULL) w_vga_problem("Unable to create SDL renderer");
+
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
+  SDL_RenderSetLogicalSize(sdl_renderer, vw, vh);
+
+  sdl_texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, vw, vh);
+  if (sdl_texture == NULL) w_vga_problem("Unable to create SDL texture");
+
 }
 
 static void init_vscr(void) {
@@ -268,21 +291,33 @@ int mgfx_init(int w, int h) {
 static void render_display_line(int dy, uint8_t *spix)
 {
   uint8_t *dp;
-  int i, j, k;
-  
-  dp = sdl_screen->pixels + sdl_screen->pitch * dy * yscale;
-  if (xscale != 1 || yscale != 1) {
-    for (j = 0; j < yscale; j++) {
-      for (i = 0; i < scr_xs; i++) {
-        for (k = 0; k < xscale; k++) {
-          dp[xscale * i + k] = spix[i];
-        }
+  int i, ys;
+
+  for (ys = 0; ys < yscale; ys++) {
+    for (i = 0; i < scr_xs; i++) {
+      dp = sdl_screen->pixels + sdl_screen->pitch * (dy * yscale + ys);
+      if (xscale == 2) {
+
+        dp[i * 8 + 0] = color[spix[i]].r;
+        dp[i * 8 + 1] = color[spix[i]].g;
+        dp[i * 8 + 2] = color[spix[i]].b;
+        dp[i * 8 + 4] = color[spix[i]].r;
+        dp[i * 8 + 5] = color[spix[i]].g;
+        dp[i * 8 + 6] = color[spix[i]].b;
+
+      } else {
+
+        dp[i * 4 + 0] = color[spix[i]].r;
+        dp[i * 4 + 1] = color[spix[i]].g;
+        dp[i * 4 + 2] = color[spix[i]].b;
+
       }
-      dp += sdl_screen->pitch;
+      // dp[i * 4 + 0] = color[spix[i]].r;
+      // dp[i * 4 + 1] = color[spix[i]].g;
+      // dp[i * 4 + 2] = color[spix[i]].b;
     }
-  } else {
-    memcpy(dp, spix, scr_xs);
   }
+
 }
 
 void mgfx_updscr(void) {
@@ -298,7 +333,10 @@ void mgfx_updscr(void) {
       render_display_line(y, vscr0 + scr_xs * y);
     }
   }
-  SDL_UpdateRect(sdl_screen, 0, 0, 0, 0);
+  SDL_UpdateTexture(sdl_texture, NULL, sdl_screen->pixels, sdl_screen->pitch);
+  SDL_RenderCopy(sdl_renderer, sdl_texture, 0, 0);
+  SDL_RenderPresent(sdl_renderer);
+  // SDL_UpdateRect(sdl_screen, 0, 0, 0, 0);
 }
 
 static unsigned b6to8(unsigned cval)
@@ -315,7 +353,7 @@ void mgfx_setpal(int base, int cnt, int *p) {
     color[i].b = b6to8(p[3*i + 2]);
   }
   
-  SDL_SetColors(sdl_screen, color, 0, 256);
+  // SDL_SetColors(sdl_screen, color, 0, 256);
 }
 
 /* input */
@@ -344,7 +382,7 @@ int mgfx_toggle_fs(void) {
   quit_video();
   fs = !fs;
   init_video();
-  SDL_SetColors(sdl_screen, color, 0, 256);
+  // SDL_SetColors(sdl_screen, color, 0, 256);
   return 0;
 }
 
@@ -356,7 +394,7 @@ int mgfx_toggle_dbl_ln(void) {
   mgfx_selln(3);
   init_video();
   init_vscr();
-  SDL_SetColors(sdl_screen, color, 0, 256);
+  // SDL_SetColors(sdl_screen, color, 0, 256);
   return 0;
 }
 
@@ -375,6 +413,6 @@ int mgfx_set_disp_size(int w, int h)
   clip_x0=clip_y0=0;
   clip_x1=scr_xs-1;
   clip_y1=scr_ys-1;
-  SDL_SetColors(sdl_screen, color, 0, 256);
+  // SDL_SetColors(sdl_screen, color, 0, 256);
   return 0;
 }
